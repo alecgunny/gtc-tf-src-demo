@@ -40,5 +40,5 @@ RUN apt-get update && \
       rm -rf /var/lib/apt/lists/*
 
 COPY --from=trtisclient /usr/local/lib/python3.5/dist-packages/tensorrtserver/api/model_config_pb2.py /opt/model_config_pb2/
-COP src/ /workspace
+COPY src/ /workspace
 ENV PYTHONPATH=$PYTHONPATH:/opt/model_config_pb2/

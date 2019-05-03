@@ -5,7 +5,7 @@ $ docker build -t $USER/tf-speech-recognition https://github.com/alecgunny/gtc-t
 
 ## Build necessary volumes
 ```
-$ docker volume create modelstore tensorboard
+$ docker volume create tensorboard
 ```
 
 ## Launch tensorboard
@@ -17,6 +17,7 @@ $ docker run --rm -d -v tensorboard:/tensorboard -p 6006:6006 --name tensorboard
 ## Train the model
 ```
 $ DATA_DIR=/path/to/data
+$ docker volume create modelstore
 $ docker run --rm -it -v tensorboard:/tensorboard -v modelstore:/modelstore -v $DATA_DIR:/data \
     $USER/tf-speech-recognition python main.py --num_gpus 4 --train_data /data/train.tfrecords \
     --valid_data /data/valid.tfrecords --pixel_wise_stats /data/stats.tfrecords \
