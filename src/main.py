@@ -70,6 +70,7 @@ def export_as_saved_model(
     model_name,
     model_version,
     use_trt=True,
+    precision='fp16',
     stats=None,
     spec_shape=None):
   export_dir = '{}/{}/{}'.format(model_store_dir, model_name, model_version)
@@ -93,7 +94,7 @@ def export_as_saved_model(
       output_saved_model_dir=os.path.join(export_dir, 'model.savedmodel'),
       max_batch_size=FLAGS.max_batch_size,
       max_workspace_size_bytes=1<<25,
-      precision_mode='fp16')
+      precision_mode=precision)
     shutil.rmtree(os.path.join(export_dir, timestamp))
   else:
     shutil.move(
