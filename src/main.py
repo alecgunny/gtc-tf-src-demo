@@ -5,7 +5,6 @@ import model_config_pb2
 import numpy as np
 import multiprocessing as mp
 import argparse
-import shutil
 import os
 
 
@@ -16,8 +15,8 @@ _EPS = 0.0001
 
 
 def soft_makedirs(dir):
-  if not os.path.exists(dir):
-    os.makedirs(dir)
+  if not tf.io.gfile.exists(dir):
+    tf.io.gfile.makedirs(dir)
 
 
 def export_config(
@@ -46,19 +45,15 @@ def export_config(
   instance_group = model_config.instance_group.add()
   instance_group.count = count
 
-  config_export_path = '{}/{}/config.pbtxt'.format(
-    model_store_dir,
-    model_name)
+  export_base = os.path.join(model_store_dir, model_name)
+  config_export_path = os.path.join(export_base, 'config.pbtxt')
   print('Exporting model config to {}'.format(config_export_path))
-  with tf.gfile.GFile(config_export_path, 'wb') as f:
+  with tf.io.gfile.GFile(config_export_path, 'wb') as f:
     f.write(str(model_config))
 
-  labels_export_path = '{}/{}/{}'.format(
-    model_store_dir,
-    model_name,
-    model_config.output[0].label_filename)
+  labels_export_path = os.path.join(export_base, 'labels.txt')
   print('Exporting label file to {}'.format(labels_export_path))
-  with tf.gfile.GFile(labels_export_path, 'w') as f:
+  with tf.io.gfile.GFile(labels_export_path, 'w') as f:
     for label in labels:
       f.write(label+"\n")
     f.write('unknown')
@@ -73,37 +68,33 @@ def export_as_saved_model(
     precision='fp16',
     stats=None,
     spec_shape=None):
-  export_dir = '{}/{}/{}'.format(model_store_dir, model_name, model_version)
+  export_base = os.path.join(model_store_dir, model_name, model_version)
   soft_makedirs(export_dir)
 
-  estimator.export_saved_model(
-    export_dir,
+  export_timestamp = estimator.export_saved_model(
+    export_base,
     lambda : serving_input_receiver_fn(stats=stats, spec_shape=spec_shape))
+  export_dir = os.path.join(export_base, 'model.savedmodel')
 
-  # estimator API creates a timestamped dir by default
-  # need to change this to the preferred naming nomenclature
-  timestamp = os.listdir(export_dir)[0]
-  print('Exporting saved_model to {}/model.savedmodel'.format(export_dir))
+  print('Exporting saved_model to {}'.format(export_dir))
   if use_trt:
     print("Accelerating graph for inference with TensorRT")
     trt.create_inference_graph(
       input_graph_def=None,
       outputs=None,
-      input_saved_model_dir=os.path.join(export_dir, timestamp),
+      input_saved_model_dir=export_timestamp,
       input_saved_model_tags=["serve"],
-      output_saved_model_dir=os.path.join(export_dir, 'model.savedmodel'),
+      output_saved_model_dir=export_dir,
       max_batch_size=FLAGS.max_batch_size,
       max_workspace_size_bytes=1<<25,
       precision_mode=precision)
-    shutil.rmtree(os.path.join(export_dir, timestamp))
+    tf.io.gile.rmtree(export_timestamp)
   else:
-    shutil.move(
-      os.path.join(export_dir, timestamp),
-      os.path.join(export_dir, 'model.savedmodel'))
+    tf.io.gfile.move(export_timestamp, export_dir)
 
 
 def load_stats(stats_path, input_shape):
-  iterator = tf.python_io.tf_record_iterator(stats_path)
+  iterator = tf.io.tf_record_iterator(stats_path)
   features = {
     'mean': tf.FixedLenSequenceFeature((), tf.float32, allow_missing=True),
     'var': tf.FixedLenSequenceFeature((), tf.float32, allow_missing=True)}
@@ -363,7 +354,7 @@ if __name__ == '__main__':
 
   FLAGS = parser.parse_args()
 
-  record_iterator = tf.python_io.tf_record_iterator(FLAGS.train_data)
+  record_iterator = tf.io.tf_record_iterator(FLAGS.train_data)
   num_train_samples = len([record for record in record_iterator])
   effective_batch_size = FLAGS.batch_size * FLAGS.num_gpus
   FLAGS.max_steps = FLAGS.num_epochs*num_train_samples // (effective_batch_size)
