@@ -2,16 +2,14 @@ import tensorflow as tf
 import tensorflow.contrib.tensorrt as trt
 import model_config_pb2
 
+import commmon
+
 import numpy as np
 import multiprocessing as mp
 import argparse
 import os
 
 
-_SAMPLE_RATE = 16000
-_FRAME_LENGTH = 20
-_FRAME_STEP = 10
-_EPS = 0.0001
 
 
 def soft_makedirs(dir):
@@ -52,11 +50,7 @@ def export_config(
     f.write(str(model_config))
 
   labels_export_path = os.path.join(export_base, 'labels.txt')
-  print('Exporting label file to {}'.format(labels_export_path))
-  with tf.io.gfile.GFile(labels_export_path, 'w') as f:
-    for label in labels:
-      f.write(label+"\n")
-    f.write('unknown')
+  common.write_labels(labels+['unknown'], labels_export_path)
 
 
 def export_as_saved_model(
@@ -104,21 +98,7 @@ def load_stats(stats_path, input_shape):
   return mean, std
 
 
-def make_spectrogram(audio):
-  frame_length = _FRAME_LENGTH * _SAMPLE_RATE // 1e3
-  frame_step = _FRAME_STEP * _SAMPLE_RATE // 1e3
-  stfts = tf.contrib.signal.stft(
-    audio,
-    frame_length=tf.cast(frame_length, tf.int32),
-    frame_step=tf.cast(frame_step, tf.int32),
-    fft_length=tf.cast(frame_length, tf.int32))
-  magnitude_spectrograms = tf.abs(stfts)
-  log_offset = 1e-6
-  log_magnitude_spectrograms = tf.log(magnitude_spectrograms + log_offset)
-  return tf.cast(log_magnitude_spectrograms, tf.float32)
-
-
-def serving_input_receiver_fn(stats=None, spec_shape=None, eps=_EPS):
+def serving_input_receiver_fn(stats=None, spec_shape=None, eps=common._EPS):
   if stats is not None:
     shift, scale = load_stats(stats, spec_shape)
 
@@ -128,7 +108,7 @@ def serving_input_receiver_fn(stats=None, spec_shape=None, eps=_EPS):
     name='audio_input')
   receiver_tensors = {'audio_input': audio_input_placeholder}
 
-  spectrogram = make_spectrogram(audio_input_placeholder)
+  spectrogram = common.make_spectrogram(audio_input_placeholder)
   if stats is not None:
     spectrogram = (spectrogram - shift) / (scale + eps)
 
@@ -144,7 +124,7 @@ def parse_fn(
     labels,
     shift=None,
     scale=None,
-    eps=_EPS):
+    eps=common._EPS):
   features = {
     'spec': tf.FixedLenSequenceFeature((), tf.float32, allow_missing=True),
     'label': tf.FixedLenFeature((), tf.string, default_value="")}
@@ -171,7 +151,7 @@ def input_fn(
     num_epochs,
     input_shape,
     stats=None,
-    eps=_EPS,
+    eps=common._EPS,
     buffer_size=50000):
   dataset = tf.data.TFRecordDataset([dataset_path])
   table = tf.contrib.lookup.index_table_from_tensor(
@@ -201,9 +181,8 @@ def input_fn(
 
 
 def main(FLAGS):
-  with open(FLAGS.labels, 'r') as f:
-    labels = f.read().split(",")
-    labels = labels[:20]
+  labels = common.read_labels(FLAGS.labels)
+  labels = labels[:20]
 
   # build and compile a keras model then convert it to an estimator
   input_shape = tuple(FLAGS.input_shape) + (1,)
