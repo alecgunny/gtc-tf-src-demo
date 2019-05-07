@@ -20,7 +20,14 @@ def read_audio(fname):
   pad_front = (common._SAMPLE_RATE - num_samples) // 2
   pad_back = (common._SAMPLE_RATE - num_samples) - pad_front
   waveform = tf.pad(waveform, [[pad_front, pad_back]])
-  return waveform, fname
+  spectrogram = common.make_spectrogram(waveform)
+
+  feature = {
+    'spec': _float_feature(spectrogram),
+    'label': _bytes_feature(b"/".join(label.split(b"/")[-2:]))
+  }
+  example = tf.train.Example(features=tf.train.Features(feature=feature))
+  return example.SerializeToString()
 
 
 def _bytes_feature(value):
@@ -76,16 +83,20 @@ def main(FLAGS):
   # build a *SYMBOLIC* representation of our dataset
   # read audio files, batch them, build spectrograms
   dataset = tf.data.Dataset.from_tensor_slices(dataset_files)
-  dataset = dataset.apply(
-    tf.data.experimental.map_and_batch(
-      map_func=read_audio,
-      batch_size=FLAGS.batch_size,
-      num_parallel_calls=mp.cpu_count())
-    )
-  dataset = dataset.prefetch(None)
-  iterator = dataset.make_initializable_iterator()
-  audio, labels = iterator.get_next()
-  spectrograms = common.make_spectrogram(audio)
+  def serialize_example(fname):
+    tf_string = tf.py_func(read_audio, fname, tf.string)
+    return tf.reshape(tf_string, ())
+
+#   dataset = dataset.apply(
+#     tf.data.experimental.map_and_batch(
+#       map_func=read_audio,
+#       batch_size=FLAGS.batch_size,
+#       num_parallel_calls=mp.cpu_count())
+#     )
+#   dataset = dataset.prefetch(None)
+#   iterator = dataset.make_initializable_iterator()
+#   spectrograms, labels = iterator.get_next()
+  # spectrograms = common.make_spectrogram(audio)
 
   # now we'll actually iterate through build the spectrograms
   # then save them out to a TFRecord file
@@ -135,7 +146,7 @@ def main(FLAGS):
     var /= len(dataset_files)
     var -= mean**2
 
-    writer = tf.python_io.TFRecordWriter('{}/stats.tfrecords'.format(FLAGS.dataset_path))
+    writer = tf.io.TFRecordWriter('{}/stats.tfrecords'.format(FLAGS.dataset_path))
     features = {
       'mean': _float_feature(mean),
       'var': _float_feature(var)

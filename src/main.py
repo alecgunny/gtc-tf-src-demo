@@ -90,12 +90,12 @@ def export_as_saved_model(
 def load_stats(stats_path, input_shape):
   iterator = tf.io.tf_record_iterator(stats_path)
   features = {
-    'mean': tf.FixedLenSequenceFeature((), tf.float32, allow_missing=True),
-    'var': tf.FixedLenSequenceFeature((), tf.float32, allow_missing=True)}
+    'mean': tf.FixedLenFeature((), tf.float32, shape=input_shape),
+    'var': tf.FixedLenFeature((), tf.float32, shape=input_shape)}
   parsed = tf.parse_single_example(next(iterator), features)
-  mean = tf.reshape(parsed['mean'], input_shape)
-  std = tf.reshape(parsed['var']**0.5, input_shape) # square rooting the variance
-  return mean, std
+  # mean = tf.reshape(parsed['mean'], input_shape)
+  # std = tf.reshape(parsed['var']**0.5, input_shape) # square rooting the variance
+  return mean, tf.sqrt(var)
 
 
 def serving_input_receiver_fn(stats=None, spec_shape=None, eps=common._EPS):
@@ -104,7 +104,7 @@ def serving_input_receiver_fn(stats=None, spec_shape=None, eps=common._EPS):
 
   audio_input_placeholder = tf.placeholder(
     dtype=tf.float32,
-    shape=[None, _SAMPLE_RATE],
+    shape=[None, common._SAMPLE_RATE],
     name='audio_input')
   receiver_tensors = {'audio_input': audio_input_placeholder}
 
@@ -126,12 +126,12 @@ def parse_fn(
     scale=None,
     eps=common._EPS):
   features = {
-    'spec': tf.FixedLenSequenceFeature((), tf.float32, allow_missing=True),
+    'spec': tf.FixedLenFeature((), tf.float32, shape=input_shape),
     'label': tf.FixedLenFeature((), tf.string, default_value="")}
   parsed = tf.parse_single_example(record, features)
 
   # preprocess and normalize spectrogrm
-  spec = tf.reshape(parsed['spec'], input_shape) # Time steps x Frequency bins
+  # spec = tf.reshape(parsed['spec'], input_shape) # Time steps x Frequency bins
   if shift is not None:
     spec -= shift
   if scale is not None:
