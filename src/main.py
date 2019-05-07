@@ -2,89 +2,11 @@ import tensorflow as tf
 import tensorflow.contrib.tensorrt as trt
 import model_config_pb2
 
-import commmon
+import common
 
-import numpy as np
 import multiprocessing as mp
 import argparse
 import os
-
-
-
-
-def soft_makedirs(dir):
-  if not tf.io.gfile.exists(dir):
-    tf.io.gfile.makedirs(dir)
-
-
-def export_config(
-    model_store_dir,
-    model_name,
-    max_batch_size,
-    output_node_name,
-    labels,
-    count):
-  model_config = model_config_pb2.ModelConfig()
-  model_config.name = model_name
-  model_config.max_batch_size = max_batch_size
-  model_config.platform = 'tensorflow_savedmodel'
-
-  model_input = model_config.input.add()
-  model_input.name = 'audio_input'
-  model_input.data_type = model_config_pb2.TYPE_FP32
-  model_input.dims.append(_SAMPLE_RATE)
-
-  model_output = model_config.output.add()
-  model_output.name = output_node_name
-  model_output.data_type = model_config_pb2.TYPE_FP32
-  model_output.dims.append(len(labels)+1)
-  model_output.label_filename = 'labels.txt'
-
-  instance_group = model_config.instance_group.add()
-  instance_group.count = count
-
-  export_base = os.path.join(model_store_dir, model_name)
-  config_export_path = os.path.join(export_base, 'config.pbtxt')
-  print('Exporting model config to {}'.format(config_export_path))
-  with tf.io.gfile.GFile(config_export_path, 'wb') as f:
-    f.write(str(model_config))
-
-  labels_export_path = os.path.join(export_base, 'labels.txt')
-  common.write_labels(labels+['unknown'], labels_export_path)
-
-
-def export_as_saved_model(
-    estimator,
-    model_store_dir,
-    model_name,
-    model_version,
-    use_trt=True,
-    precision='fp16',
-    stats=None,
-    spec_shape=None):
-  export_base = os.path.join(model_store_dir, model_name, model_version)
-  soft_makedirs(export_dir)
-
-  export_timestamp = estimator.export_saved_model(
-    export_base,
-    lambda : serving_input_receiver_fn(stats=stats, spec_shape=spec_shape))
-  export_dir = os.path.join(export_base, 'model.savedmodel')
-
-  print('Exporting saved_model to {}'.format(export_dir))
-  if use_trt:
-    print("Accelerating graph for inference with TensorRT")
-    trt.create_inference_graph(
-      input_graph_def=None,
-      outputs=None,
-      input_saved_model_dir=export_timestamp,
-      input_saved_model_tags=["serve"],
-      output_saved_model_dir=export_dir,
-      max_batch_size=FLAGS.max_batch_size,
-      max_workspace_size_bytes=1<<25,
-      precision_mode=precision)
-    tf.io.gile.rmtree(export_timestamp)
-  else:
-    tf.io.gfile.move(export_timestamp, export_dir)
 
 
 def load_stats(stats_path, input_shape):
@@ -93,9 +15,7 @@ def load_stats(stats_path, input_shape):
     'mean': tf.FixedLenFeature((), tf.float32, shape=input_shape),
     'var': tf.FixedLenFeature((), tf.float32, shape=input_shape)}
   parsed = tf.parse_single_example(next(iterator), features)
-  # mean = tf.reshape(parsed['mean'], input_shape)
-  # std = tf.reshape(parsed['var']**0.5, input_shape) # square rooting the variance
-  return mean, tf.sqrt(var)
+  return parsed['mean'], tf.sqrt(parsed['var'])
 
 
 def serving_input_receiver_fn(stats=None, spec_shape=None, eps=common._EPS):
@@ -130,8 +50,8 @@ def parse_fn(
     'label': tf.FixedLenFeature((), tf.string, default_value="")}
   parsed = tf.parse_single_example(record, features)
 
-  # preprocess and normalize spectrogrm
-  # spec = tf.reshape(parsed['spec'], input_shape) # Time steps x Frequency bins
+  # normalize spectrogrm
+  spec = parsed['spec']
   if shift is not None:
     spec -= shift
   if scale is not None:
@@ -184,7 +104,7 @@ def main(FLAGS):
   labels = common.read_labels(FLAGS.labels)
   labels = labels[:20]
 
-  # build and compile a keras model then convert it to an estimator
+  # build and compile a Keras ResNet model
   input_shape = tuple(FLAGS.input_shape) + (1,)
   model = tf.keras.applications.ResNet50(
     input_shape=input_shape,
@@ -195,9 +115,11 @@ def main(FLAGS):
     optimizer=optimizer,
     loss='categorical_crossentropy',
     metrics=['categorical_accuracy'])
+
   print('Training for {} steps'.format(FLAGS.max_steps))
   print(model.summary())
 
+  # convert this model to a TF Estimator
   config = tf.estimator.RunConfig(
     save_summary_steps=FLAGS.log_steps,
     save_checkpoints_secs=FLAGS.eval_throttle_secs,
@@ -230,24 +152,63 @@ def main(FLAGS):
   tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
 
   # export our model
-  export_as_saved_model(
-    estimator,
-    FLAGS.model_store_dir,
-    FLAGS.model_name,
-    FLAGS.model_version,
-    use_trt=FLAGS.use_trt,
-    precision=FLAGS.trt_precision,
-    stats=FLAGS.pixel_wise_stats,
-    spec_shape=FLAGS.input_shape)
+  export_base = os.path.join(
+    FLAGS.model_store_dir, FLAGS.model_name, FLAGS.model_version)
+  tf.io.gfile.makedirs(export_base)
 
-  # export config.pbtxt for trtis model store
-  export_config(
-    FLAGS.model_store_dir,
-    FLAGS.model_name,
-    FLAGS.max_batch_size,
-    model.output.name.split("/")[0],
-    labels,
-    FLAGS.count)
+  # `export_saved_model` creates a timestamped directory by default
+  # need to change it to fit format expected by TRTIS
+  export_timestamp = estimator.export_saved_model(
+    export_base,
+    lambda : serving_input_receiver_fn(
+      stats=FLAGS.pixel_wise_stats, spec_shape=FLAGS.input_shape))
+
+  export_dir = os.path.join(export_base, 'model.savedmodel')
+  print('Exporting saved_model to {}'.format(export_dir))
+
+  if FLAGS.use_trt:
+    print("Accelerating graph for inference with TensorRT")
+    trt.create_inference_graph(
+      input_graph_def=None,
+      outputs=None,
+      input_saved_model_dir=export_timestamp,
+      input_saved_model_tags=["serve"],
+      output_saved_model_dir=export_dir,
+      max_batch_size=FLAGS.max_batch_size,
+      max_workspace_size_bytes=1<<25,
+      precision_mode=FLAGS.trt_precision)
+    tf.io.gile.rmtree(export_timestamp)
+  else:
+    tf.io.gfile.move(export_timestamp, export_dir)
+
+  # export config.pbtxt and labels.txt for trtis model store
+  model_config = model_config_pb2.ModelConfig()
+  model_config.name = FLAGS.model_name
+  model_config.max_batch_size = FLAGS.max_batch_size
+  model_config.platform = 'tensorflow_savedmodel'
+
+  model_input = model_config.input.add()
+  model_input.name = 'audio_input'
+  model_input.data_type = model_config_pb2.TYPE_FP32
+  model_input.dims.append(common._SAMPLE_RATE)
+
+  model_output = model_config.output.add()
+  model_output.name = model.output.name.split("/")[0]
+  model_output.data_type = model_config_pb2.TYPE_FP32
+  model_output.dims.append(len(labels)+1)
+  model_output.label_filename = 'labels.txt'
+
+  instance_group = model_config.instance_group.add()
+  instance_group.count = FLAGS.count
+
+  config_export_base = os.path.join(FLAGS.model_store_dir, FLAGS.model_name)
+  config_export_path = os.path.join(config_export_base, 'config.pbtxt')
+  print('Exporting model config to {}'.format(config_export_path))
+  with tf.io.gfile.GFile(config_export_path, 'wb') as f:
+    f.write(str(model_config))
+
+  labels_export_path = os.path.join(config_export_base, 'labels.txt')
+  common.write_labels(labels+['unknown'], labels_export_path)
 
 
 if __name__ == '__main__':

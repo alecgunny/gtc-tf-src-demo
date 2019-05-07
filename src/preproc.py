@@ -10,6 +10,44 @@ import subprocess
 import multiprocessing as mp
 
 
+# labels that are scored on the test set
+_TEST_WORDS = [
+  "yes",
+  "no",
+  "up",
+  "down",
+  "left",
+  "right",
+  "on",
+  "off",
+  "stop",
+  "go"
+]
+
+# labels which are underrepresented in the training set
+_AUX_WORDS = [
+  "bed",
+  "bird",
+  "cat",
+  "dog",
+  "happy",
+  "house",
+  "marvin",
+  "sheila",
+  "tree",
+  "wow"
+]
+
+def _bytes_feature(value):
+  return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+
+def _float_feature(array):
+  if array.ndim > 1:
+    array = array.ravel()
+  return tf.train.Feature(float_list=tf.train.FloatList(value=array))
+
+
 def read_audio(fname):
   audio_binary = tf.read_file(fname)
   waveform = tf.contrib.ffmpeg.decode_audio(
@@ -32,51 +70,32 @@ def read_audio(fname):
   return example.SerializeToString()
 
 
-def _bytes_feature(value):
-  return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
-
-
-def _float_feature(array):
-  if array.ndim > 1:
-    array = array.ravel()
-  return tf.train.Feature(float_list=tf.train.FloatList(value=array))
-
-
 def main(FLAGS):
-  test_words = ["yes", "no", "up", "down", "left", "right", "on", "off", "stop", "go"]
-  aux_words = ["bed", "bird", "cat", "dog", "happy", "house", "marvin", "sheila", "tree", "wow"]
-  full_word_list = os.listdir(os.path.join(FLAGS.dataset_path, 'train', 'audio'))
+  full_word_list = os.listdir(os.path.join(FLAGS.data_dir, 'train', 'audio'))
   del full_word_list[full_word_list.index('_background_noise_')]
 
-  # our order will go:
-  # 1. the 10 words to classify on the test set: test_words
-  # 2. words that aren't one of the test set words but have a "regular" class representation
-  # 3. words that aren't in the test set and are underrepresented in the training set: aux words
-  # this will let us to more easily clip labels and train on reduced sets of labels
-  words = [word for word in test_words]
-  words += [word for word in full_word_list if word not in (aux_words  + test_words)]
-  words += aux_words
+  # order labels in a particular way to make clipping easier
+  words = [i for i in _TEST_WORDS]
+  words += [i for i in full_word_list if i not in (_AUX_WORDS + _TEST_WORDS)]
+  words += _AUX_WORDS
 
   if FLAGS.subset in ['train', 'valid', 'ptest']:
-    subset_path = os.path.join(FLAGS.dataset_path, 'train')
-    audio_path = os.path.join(subset_path, 'audio')
+    subset_dir = os.path.join(FLAGS.data_dir, 'train')
 
     with tf.io.gfile.GFile(
-        os.path.join(subset_path, 'validation_list.txt'), 'r') as f:
-      validation_files = [
-        os.path.join(audio_path, fname) for fname in f.read().split("\n")[:-1]]
+        os.path.join(subset_dir, 'validation_list.txt'), 'r') as f:
+      validation_files = f.read().split("\n")[:-1]
 
     with tf.io.gfile.GFile(
-        os.path.join(subset_path, 'testing_list.txt'), 'r') as f:
-      pseudo_test_files = [
-        os.path.join(audio_path, fname) for fname in f.read().split("\n")[:-1]]
+        os.path.join(subset_dir, 'testing_list.txt'), 'r') as f:
+      pseudo_test_files = f.read().split("\n")[:-1]
 
     train_files = []
     for word in words:
-      for fname in os.listdir(os.path.join(audio_path, word)):
-        filename = os.path.join(audio_path, word, fname)
-        if filename not in (validation_files + pseudo_test_files):
-          train_files.append(filename)
+      for fname in os.listdir(os.path.join(subset_dir, 'audio', word)):
+        fname = os.path.join(word, fname)
+        if fname not in (validation_files + pseudo_test_files):
+          train_files.append(fname)
 
     dataset_files = {
       'train': train_files,
@@ -84,17 +103,22 @@ def main(FLAGS):
       'ptest': pseudo_test_files}[FLAGS.subset]
 
   else:
-    dataset_files = os.listdir(
-      os.path.join(FLAGS.dataset_path, FLAGS.subset, 'audio'))
+    subset_dir = os.path.join(FLAGS.dataset_dir, FLAGS.subset)
+    dataset_files = os.listdir(subset_dir, 'audio')
 
+  dataset_files = [
+    os.path.join(subset_dir, 'audio', fname) for fname in dataset_files]
   dataset = tf.data.Dataset.from_tensor_slices(dataset_files)
+
   def serialize_example(fname):
     tf_string = tf.py_func(read_audio, [fname], tf.string)
     return tf.reshape(tf_string, ())
   dataset = dataset.map(serialize_example, num_parallel_calls=mp.cpu_count())
 
-  filename = os.path.join(FLAGS.dataset_path, FLAGS.subset+".tfrecords")
-  print('Writing {} examples to dataset {}'.format(len(dataset_files), filename))
+  filename = os.path.join(FLAGS.data_dir, FLAGS.subset+".tfrecords")
+  print('Writing {} examples to dataset {}'.format(
+    len(dataset_files), filename))
+
   writer = tf.data.experimental.TFRecordWriter(filename)
   writer.write(dataset)
 
@@ -106,6 +130,7 @@ def main(FLAGS):
     feature_spec = {'spec': tf.FixedLenFeature((99, 161), tf.float32)}
     dataset = dataset.map(lambda example:
       tf.parse_single_example(example, feature_spec))
+
     for n, example in enumerate(dataset.take(-1)):
       spec = example['spec'].numpy()
       if n == 0:
@@ -119,7 +144,8 @@ def main(FLAGS):
     var /= len(dataset_files)
     var -= mean**2
 
-    writer = tf.io.TFRecordWriter('{}/stats.tfrecords'.format(FLAGS.dataset_path))
+    writer = tf.io.TFRecordWriter(
+      os.path.join(FLAGS.data_dir, 'stats.tfrecords'))
     features = {
       'mean': _float_feature(mean),
       'var': _float_feature(var)
@@ -128,13 +154,13 @@ def main(FLAGS):
     writer.write(example.SerializeToString())
     writer.close()
 
-    common.write_labels(words, os.path.join(FLAGS.dataset_path, 'labels.txt'))
+    common.write_labels(words, os.path.join(FLAGS.data_dir, 'labels.txt'))
 
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument(
-    '--dataset_path',
+    '--data_dir',
     type=str,
     default='/data',
     help='path to data')
@@ -147,7 +173,7 @@ if __name__ == '__main__':
 
   FLAGS = parser.parse_args()
 
-  subset_path = os.path.join(FLAGS.dataset_path, FLAGS.subset)
+  subset_path = os.path.join(FLAGS.data_dir, FLAGS.subset)
   if not os.path.exists(subset_path):
     print('Downloading and extracting data subset {}'.format(FLAGS.subset))
     zipfile_path = subset_path + ".7z"
@@ -155,8 +181,8 @@ if __name__ == '__main__':
     kaggle_api.competition_download_file(
       'tensorflow-speech-recognition-challenge',
       '{}.7z'.format(FLAGS.subset),
-      FLAGS.dataset_path)
-    subprocess.call(["7za", "x", "-o{}".format(FLAGS.dataset_path), zipfile_path])
+      FLAGS.data_dir)
+    subprocess.call(["7za", "x", "-o{}".format(FLAGS.data_dir), zipfile_path])
 
   if os.path.exists(subset_path+".7z"):
     os.remove(subset_path+".7z")
