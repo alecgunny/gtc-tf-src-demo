@@ -28,10 +28,10 @@ $ docker run --rm -d -v tensorboard:/tensorboard -p 6006:6006 --name tensorboard
 Navigate to `localhost:6006` on your machine to keep track of model loss and accuracy.
 
 ### Train the model
-Now we're all set to launch our training script! Feel free to look in `src/main.py` to see the default values used for things like learning rate, batch size, etc. Note that even though we're training our model on 2D spectrograms, we'll use a `serving_input_receiver_fn` to export a model which takes in raw one second audio files, computes a spectrogram, then runs the model.
+Now we're all set to launch our training script! Feel free to look in `src/main.py` to see the default values used for things like learning rate, batch size, etc. Note that even though we're training our model on 2D spectrograms, we'll use a `serving_input_receiver_fn` to export a model which takes in raw one second audio signals, computes a spectrogram, then runs the model.
 
 We also provide some flags which will tell the TensorRT Inference Server how to serve up our model once it's exported.
-- `max_batch_size` tells the inference server the maximum number of audio clips it can expect to handle at once
+- `--max_batch_size` tells the inference server the maximum number of audio clips it can expect to handle at once
 - `--count` is used to tell the inference server how many threads of inference to run concurrently
 - `--use_trt` accelerates the model with NVIDIA's TensorRT inference library integrated natively into TensorFlow
 - `--trt_precision` specifies at what precision to run inference. Using `fp16` precision can drastically improve throughput
