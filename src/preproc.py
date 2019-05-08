@@ -173,10 +173,10 @@ if __name__ == '__main__':
 
   FLAGS = parser.parse_args()
 
-  subset_path = os.path.join(FLAGS.data_dir, FLAGS.subset)
-  if not os.path.exists(subset_path):
+  subset_dir = os.path.join(FLAGS.data_dir, FLAGS.subset)
+  if not os.path.exists(subset_dir):
     print('Downloading and extracting data subset {}'.format(FLAGS.subset))
-    zipfile_path = subset_path + ".7z"
+    zipfile_path = subset_dir + ".7z"
 
     kaggle_api.competition_download_file(
       'tensorflow-speech-recognition-challenge',
@@ -184,16 +184,16 @@ if __name__ == '__main__':
       FLAGS.data_dir)
     subprocess.call(["7za", "x", "-o{}".format(FLAGS.data_dir), zipfile_path])
 
-  if os.path.exists(subset_path+".7z"):
-    os.remove(subset_path+".7z")
+  if os.path.exists(subset_dir+".7z"):
+    os.remove(subset_dir+".7z")
 
   if FLAGS.subset == 'train':
     for subset in ['train', 'valid', 'ptest']:
-      subset_path = os.path.join(FLAGS.dataset_path, subset+".tfrecords")
-      if not os.path.exists(subset_path):
+      subset_dir = os.path.join(FLAGS.data_dir, subset+".tfrecords")
+      if not os.path.exists(subset_dir):
         FLAGS.subset = subset
         main(FLAGS)
   else:
-    if not os.path.exists(subset_path+".tfrecords"):
+    if not os.path.exists(subset_dir+".tfrecords"):
       main(FLAGS)
 

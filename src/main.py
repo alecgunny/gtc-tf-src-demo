@@ -12,8 +12,8 @@ import os
 def load_stats(stats_path, input_shape):
   iterator = tf.io.tf_record_iterator(stats_path)
   features = {
-    'mean': tf.FixedLenFeature((), tf.float32, shape=input_shape),
-    'var': tf.FixedLenFeature((), tf.float32, shape=input_shape)}
+    'mean': tf.FixedLenFeature(input_shape, tf.float32),
+    'var': tf.FixedLenFeature(input_shape, tf.float32)}
   parsed = tf.parse_single_example(next(iterator), features)
   return parsed['mean'], tf.sqrt(parsed['var'])
 
@@ -46,7 +46,7 @@ def parse_fn(
     scale=None,
     eps=common._EPS):
   features = {
-    'spec': tf.FixedLenFeature((), tf.float32, shape=input_shape),
+    'spec': tf.FixedLenFeature(input_shape, tf.float32),
     'label': tf.FixedLenFeature((), tf.string, default_value="")}
   parsed = tf.parse_single_example(record, features)
 
@@ -153,7 +153,7 @@ def main(FLAGS):
 
   # export our model
   export_base = os.path.join(
-    FLAGS.model_store_dir, FLAGS.model_name, FLAGS.model_version)
+    FLAGS.model_store_dir, FLAGS.model_name, str(FLAGS.model_version))
   tf.io.gfile.makedirs(export_base)
 
   # `export_saved_model` creates a timestamped directory by default
@@ -177,7 +177,7 @@ def main(FLAGS):
       max_batch_size=FLAGS.max_batch_size,
       max_workspace_size_bytes=1<<25,
       precision_mode=FLAGS.trt_precision)
-    tf.io.gile.rmtree(export_timestamp)
+    tf.io.gfile.rmtree(export_timestamp)
   else:
     tf.io.gfile.move(export_timestamp, export_dir)
 
@@ -242,7 +242,7 @@ if __name__ == '__main__':
   parser.add_argument(
     '--learning_rate',
     type=float,
-    default=2e-5)
+    default=1.25e-3)
   parser.add_argument(
     '--batch_size',
     type=int,
