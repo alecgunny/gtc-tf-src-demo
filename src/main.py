@@ -151,9 +151,9 @@ def main(FLAGS):
     throttle_secs=FLAGS.eval_throttle_secs)
   tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
 
+  model_base = os.path.join(FLAGS.model_store_dir, FLAGS.model_name)
   # export our model
-  export_base = os.path.join(
-    FLAGS.model_store_dir, FLAGS.model_name, str(FLAGS.model_version))
+  export_base = os.path.join(model_base, str(FLAGS.model_version))
   tf.io.gfile.makedirs(export_base)
 
   # `export_saved_model` creates a timestamped directory by default
@@ -182,32 +182,32 @@ def main(FLAGS):
     tf.io.gfile.move(export_timestamp, export_dir)
 
   # export config.pbtxt and labels.txt for trtis model store
-  model_config = model_config_pb2.ModelConfig()
-  model_config.name = FLAGS.model_name
-  model_config.max_batch_size = FLAGS.max_batch_size
-  model_config.platform = 'tensorflow_savedmodel'
+  model_input = model_config_pb2.ModelInput(
+    name='audio_input',
+    data_type=model_config_pb2.TYPE_FP32,
+    dims=[common._SAMPLE_RATE])
+  model_output = model_config_pb2.ModelOutput(
+    name=model.output.name.split("/")[0],
+    data_type=model_config_pb2.TYPE_FP32,
+    dims=[len(labels)+1],
+    label_filename='labels.txt')
+  model_instance_group = model_config_pb2.ModelInstanceGroup(
+    count=FLAGS.count)
 
-  model_input = model_config.input.add()
-  model_input.name = 'audio_input'
-  model_input.data_type = model_config_pb2.TYPE_FP32
-  model_input.dims.append(common._SAMPLE_RATE)
+  model_config = model_config_pb2.ModelConfig(
+    name=FLAGS.model_name,
+    max_batch_size=FLAGS.max_batch_size,
+    platform='tensorflow_savedmodel',
+    input=[model_input],
+    output=[model_output],
+    instance_group=[model_instance_group])
 
-  model_output = model_config.output.add()
-  model_output.name = model.output.name.split("/")[0]
-  model_output.data_type = model_config_pb2.TYPE_FP32
-  model_output.dims.append(len(labels)+1)
-  model_output.label_filename = 'labels.txt'
-
-  instance_group = model_config.instance_group.add()
-  instance_group.count = FLAGS.count
-
-  config_export_base = os.path.join(FLAGS.model_store_dir, FLAGS.model_name)
-  config_export_path = os.path.join(config_export_base, 'config.pbtxt')
+  config_export_path = os.path.join(model_base, 'config.pbtxt')
   print('Exporting model config to {}'.format(config_export_path))
   with tf.io.gfile.GFile(config_export_path, 'wb') as f:
     f.write(str(model_config))
 
-  labels_export_path = os.path.join(config_export_base, 'labels.txt')
+  labels_export_path = os.path.join(model_base, 'labels.txt')
   common.write_labels(labels+['unknown'], labels_export_path)
 
 
