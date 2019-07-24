@@ -21,15 +21,9 @@ docker build -t $USER/tensorflow-sample https://github.com/alecgunny/gtc-tf-src-
 ### Monitoring the model
 We'll launch TensorFlow's tensorboard utility in the background to monitor the progress of our model as it trains
 ```
-<<<<<<< HEAD
 $ docker volume create tensorboard
 $ docker run --rm -d -v tensorboard:/tensorboard -p 6006:6006 --name tensorboard \
     $USER/tensorflow-sample tensorboard --logdir=/tensorboard --host=0.0.0.0
-=======
-docker volume create tensorboard
-docker run --rm -d -v tensorboard:/tensorboard -p 6006:6006 --name tensorboard \
-    $USER/tf-speech-recognition tensorboard --logdir=/tensorboard --host=0.0.0.0
->>>>>>> 8770a063ec7d1681000343b804ff20bb332f40ce
 ```
 Navigate to `localhost:6006` on your machine to keep track of model loss and accuracy.
 
