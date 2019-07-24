@@ -125,7 +125,7 @@ def main(FLAGS):
     save_checkpoints_secs=FLAGS.eval_throttle_secs,
     log_step_count_steps=FLAGS.log_steps,
     tf_random_seed=0,
-    model_dir=FLAGS.tensorboard_dir,
+    model_dir=os.path.join(FLAGS.tensorboard_dir, FLAGS.model_name),
     train_distribute=tf.contrib.distribute.MirroredStrategy(
       num_gpus=FLAGS.num_gpus))
   estimator = tf.keras.estimator.model_to_estimator(model, config=config)

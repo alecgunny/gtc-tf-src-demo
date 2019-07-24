@@ -23,7 +23,7 @@ We'll launch TensorFlow's tensorboard utility in the background to monitor the p
 ```
 $ docker volume create tensorboard
 $ docker run --rm -d -v tensorboard:/tensorboard -p 6006:6006 --name tensorboard \
-    $USER/tf-speech-recognition tensorboard --logdir=/tensorboard --host=0.0.0.0
+    $USER/tensorflow-sample tensorboard --logdir=/tensorboard --host=0.0.0.0
 ```
 Navigate to `localhost:6006` on your machine to keep track of model loss and accuracy.
 
@@ -38,7 +38,7 @@ We also provide some flags which will tell the TensorRT Inference Server how to 
 ```
 $ docker volume create modelstore
 $ docker run --rm -it -v tensorboard:/tensorboard -v modelstore:/modelstore -v $DATA_DIR:/data \
-    $USER/tf-speech-recognition python main.py --num_gpus 4 --train_data /data/train.tfrecords \
+    $USER/tensorflow-sample python main.py --num_gpus 4 --train_data /data/train.tfrecords \
     --valid_data /data/valid.tfrecords --pixel_wise_stats /data/stats.tfrecords \
     --input_shape 99 161 --labels /data/labels.txt --num_epochs 5 --model_name my_tf_model \
     --max_batch_size 8 --count 4 --use_trt --trt_precision fp16

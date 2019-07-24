@@ -1,5 +1,5 @@
-ARG tag=19.04-py3
-ARG release=v1.1.0
+ARG tag=19.06-py3
+ARG release=v1.3.0
 
 # build tensorrt inference server client image so that we can grab the
 # model config proto for the tensorflow container
@@ -7,7 +7,7 @@ FROM ubuntu:16.04 AS wget
 ARG release
 RUN apt-get update && \
       apt-get install -y wget && \
-      wget -O /tmp/clients.tar.gz https://github.com/NVIDIA/tensorrt-inference-server/releases/download/${release}/${release}.clients.tar.gz
+      wget -O /tmp/clients.tar.gz https://github.com/NVIDIA/tensorrt-inference-server/releases/download/${release}/${release}_ubuntu1604.clients.tar.gz
 
 FROM ubuntu:16.04 AS trtisclient
 COPY --from=wget /tmp/clients.tar.gz /opt/tensorrtserver/clients/
