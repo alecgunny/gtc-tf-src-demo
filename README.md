@@ -7,7 +7,7 @@ For this example, we'll use some data from a Kaggle competition I worked on a wh
 KAGGLE_DIR=/path/to/.kaggle
 DATA_DIR=/path/to/data
 
-docker build =t $USER/tensorflow-sample:preproc --target preproc \
+docker build -t $USER/tensorflow-sample:preproc --target preproc \
   github.com/alecgunny/gtc-tf-src-demo.git
 docker run -v $DATA_DIR:/data -v $KAGGLE_DIR:/tmp/.kaggle -u $(id -u):$(id -g) --runtime runc \
   $USER/tensorflow-sample:preproc python preproc.py --data_dir /data --subset train
