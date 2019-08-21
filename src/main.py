@@ -59,7 +59,7 @@ def parse_fn(
     spec /=  scale + eps
   spec = tf.expand_dims(spec, axis=2) # add channel dimension, T x F x 1
 
-  label = tf.string_split([parsed['label']], delimiter="/").values[-2:-1]
+  label = tf.string_split([parsed['label']], sep="/").values[-2:-1]
   label = table.lookup(label)[0]
   label = tf.one_hot(label, len(labels)+1)
   return spec, label
@@ -83,20 +83,12 @@ def input_fn(
   if stats is not None:
     shift, scale = load_stats(stats, input_shape)
 
-  dataset = dataset.apply(
-    tf.data.experimental.shuffle_and_repeat(buffer_size, num_epochs))
-  dataset = dataset.apply(
-    tf.data.experimental.map_and_batch(
-      map_func=lambda record: parse_fn(
-        record,
-        table,
-        input_shape,
-        labels,
-        shift=shift,
-        scale=scale,
-        eps=eps),
-      batch_size=batch_size,
-      num_parallel_calls=mp.cpu_count()))
+  dataset = dataset.shuffle(buffer_size)
+  dataset = dataset.repeat(num_epochs)
+  dataset = dataset.map(lambda record: parse_fn(
+    record, table input_shape, labels, shift=shift, scale=scale, eps=eps),
+    num_parallel_calls=mp.cpu_count())
+  dataset = dataset.batch(batch_size)
   dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
   return dataset
 
@@ -295,7 +287,7 @@ if __name__ == '__main__':
 
   FLAGS = parser.parse_args()
 
-  record_iterator = tf.io.tf_record_iterator(FLAGS.train_data)
+  record_iterator = tf.data.TFRecordDataset(FLAGS.train_data)
   num_train_samples = len([record for record in record_iterator])
   effective_batch_size = FLAGS.batch_size * FLAGS.num_gpus
   FLAGS.max_steps = FLAGS.num_epochs*num_train_samples // (effective_batch_size)
