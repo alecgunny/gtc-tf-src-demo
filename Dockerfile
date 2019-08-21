@@ -1,5 +1,19 @@
-ARG tag=19.06-py3
+ARG tag=19.07-py3
 ARG release=v1.3.0
+
+FROM nvcr.io/nvidia/tensorflow:$tag AS tf
+
+FROM tf AS preproc-devel
+ENV KAGGLE_CONFIG_DIR=/tmp/.kaggle
+VOLUME $KAGGLE_CONFIG_DIR
+
+RUN apt-get update && \
+      apt-get install -y --no-install-recommends p7zip-full ffmpeg && \
+      pip install kaggle && \
+      rm -rf /var/lib/apt/lists/*
+
+FROM preproc-devel AS preproc
+COPY src/ /workspace
 
 # build tensorrt inference server client image so that we can grab the
 # model config proto for the tensorflow container
@@ -29,8 +43,7 @@ RUN apt-get update && \
        pillow && \
      rm -rf /var/lib/apt/lists/*
 
-FROM nvcr.io/nvidia/tensorflow:$tag
-
+FROM tf
 ENV MODELSTORE=/modelstore TENSORBOARD=/tensorboard
 VOLUME $MODELSTORE $TENSORBOARD
 
