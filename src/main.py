@@ -10,12 +10,13 @@ import os
 
 
 def load_stats(stats_path, input_shape):
-  iterator = tf.io.tf_record_iterator(stats_path)
+  dataset = tf.data.TFRecordDataset([stats_path])
+  serialized = next(iter(dataset))
   features = {
-    'mean': tf.FixedLenFeature(input_shape, tf.float32),
-    'var': tf.FixedLenFeature(input_shape, tf.float32)}
-  parsed = tf.parse_single_example(next(iterator), features)
-  return parsed['mean'], tf.sqrt(parsed['var'])
+    'mean': tf.io.FixedLenFeature(input_shape, tf.float32),
+    'var': tf.io.FixedLenFeature(input_shape, tf.float32)}
+  parsed = tf.io.parse_single_example(serialized, features)
+  return parsed['mean'], tf.math.sqrt(parsed['var'])
 
 
 def serving_input_receiver_fn(stats=None, spec_shape=None, eps=common._EPS):
@@ -46,8 +47,8 @@ def parse_fn(
     scale=None,
     eps=common._EPS):
   features = {
-    'spec': tf.FixedLenFeature(input_shape, tf.float32),
-    'label': tf.FixedLenFeature((), tf.string, default_value="")}
+    'spec': tf.io.FixedLenFeature(input_shape, tf.float32),
+    'label': tf.io.FixedLenFeature((), tf.string, default_value="")}
   parsed = tf.parse_single_example(record, features)
 
   # normalize spectrogrm
